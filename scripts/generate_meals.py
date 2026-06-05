@@ -21,7 +21,7 @@ RECIPIENT_EMAILS = [
 ]
 SENDER_EMAIL = "onboarding@resend.dev"
 
-# Edit this to change what kinds of meals get suggested
+# Default preferences — these are supplemented by whatever is saved in the DB
 MEAL_PREFERENCES = """
 - Family of 3, no food allergies
 - Prefer weeknight meals that take under 45 minutes
@@ -55,16 +55,19 @@ def fetch_recent_feedback():
     return feedback_summary
 
 
-def fetch_custom_preferences():
-    result = supabase.table("custom_preferences").select("content").eq("id", 1).execute()
-    if result.data and result.data[0].get("content"):
-        return result.data[0]["content"].strip()
-    return ""
+def fetch_db_preferences():
+    result = supabase.table("custom_preferences").select("content, general_info").eq("id", 1).execute()
+    if not result.data:
+        return "", ""
+    row = result.data[0]
+    return row.get("general_info", "") or "", row.get("content", "") or ""
 
 
 def build_prompt(feedback):
-    custom = fetch_custom_preferences()
-    custom_section = f"\nSpecial requests for this week:\n{custom}" if custom else ""
+    general_info, weekly_requests = fetch_db_preferences()
+
+    general_section = f"\nFamily info:\n{general_info.strip()}" if general_info.strip() else ""
+    weekly_section = f"\nSpecial requests for this week:\n{weekly_requests.strip()}" if weekly_requests.strip() else ""
 
     feedback_text = ""
     if feedback:
@@ -85,14 +88,21 @@ def build_prompt(feedback):
 
     return f"""Generate 7 dinner ideas for the week ahead.
 
-Preferences:
+Default preferences:
 {MEAL_PREFERENCES}
-{custom_section}
+{general_section}
+{weekly_section}
 {feedback_text}
 
 Return ONLY a JSON array with exactly 7 objects, one per day:
 [
-  {{"day": "Monday", "name": "Meal Name", "description": "3-4 sentences describing the dish — what it tastes like, key ingredients, cooking method, and why the family will enjoy it."}},
+  {{
+    "day": "Monday",
+    "name": "Meal Name",
+    "summary": "One punchy sentence for the email — what it is and why it's great.",
+    "description": "3-4 sentences — flavors, key ingredients, cooking method, and why the family will love it.",
+    "cook_time": "30 minutes"
+  }},
   ...
 ]
 
@@ -127,7 +137,9 @@ def save_meal_plan(meals):
             "meal_plan_id": plan_id,
             "day_of_week": m["day"],
             "name": m["name"],
-            "description": m["description"],
+            "summary": m.get("summary", ""),
+            "description": m.get("description", ""),
+            "cook_time": m.get("cook_time", ""),
         }
         for m in meals
     ]
@@ -137,7 +149,7 @@ def save_meal_plan(meals):
 
 def build_email_html(meals, plan_id):
     frontend_url = os.environ["FRONTEND_URL"]
-    feedback_url = f"{frontend_url}/week/{plan_id}"
+    feedback_url = f"{frontend_url}/this-week"
 
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
@@ -146,12 +158,14 @@ def build_email_html(meals, plan_id):
 
     meal_rows = ""
     for meal in meals:
+        cook_time = meal.get("cook_time", "")
+        time_tag = f'<span style="color:#a8a29e;font-size:12px;"> · {cook_time}</span>' if cook_time else ""
         meal_rows += f"""
         <tr>
           <td style="padding:12px 16px;border-bottom:1px solid #f0e8dc;font-weight:600;color:#92400e;width:110px;vertical-align:top;">{meal['day']}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #f0e8dc;">
-            <strong style="color:#1c1917;">{meal['name']}</strong><br>
-            <span style="color:#78716c;font-size:14px;">{meal['description']}</span>
+            <strong style="color:#1c1917;">{meal['name']}</strong>{time_tag}<br>
+            <span style="color:#78716c;font-size:14px;">{meal.get('summary', meal.get('description', ''))}</span>
           </td>
         </tr>"""
 
@@ -169,7 +183,7 @@ def build_email_html(meals, plan_id):
       </table>
       <div style="text-align:center;margin-top:28px;">
         <a href="{feedback_url}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:600;">
-          Rate &amp; Give Feedback &rarr;
+          View &amp; Give Feedback &rarr;
         </a>
         <p style="color:#a8a29e;font-size:13px;margin-top:12px;">Rate meals, mark what you made, or swap any you don&apos;t like.</p>
       </div>

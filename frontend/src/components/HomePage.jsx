@@ -1,56 +1,41 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import MealCard from './MealCard'
-
-const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 export default function HomePage() {
-  const [latestPlan, setLatestPlan] = useState(null)
-  const [meals, setMeals] = useState([])
-  const [preferences, setPreferences] = useState('')
+  const [generalInfo, setGeneralInfo] = useState('')
+  const [weeklyRequests, setWeeklyRequests] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [{ data: prefData }, { data: planData }] = await Promise.all([
-        supabase.from('custom_preferences').select('content').eq('id', 1).single(),
-        supabase
-          .from('meal_plans')
-          .select('id, week_start, meals(*, feedback(*))')
-          .order('week_start', { ascending: false })
-          .limit(1)
-          .single(),
-      ])
+      const { data } = await supabase
+        .from('custom_preferences')
+        .select('general_info, content')
+        .eq('id', 1)
+        .single()
 
-      if (prefData) setPreferences(prefData.content || '')
-
-      if (planData) {
-        setLatestPlan(planData)
-        setMeals(
-          planData.meals.sort(
-            (a, b) => DAY_ORDER.indexOf(a.day_of_week) - DAY_ORDER.indexOf(b.day_of_week)
-          )
-        )
+      if (data) {
+        setGeneralInfo(data.general_info || '')
+        setWeeklyRequests(data.content || '')
       }
       setLoading(false)
     }
     load()
   }, [])
 
-  async function savePreferences() {
+  async function save() {
     setSaving(true)
-    await supabase
-      .from('custom_preferences')
-      .upsert({ id: 1, content: preferences, updated_at: new Date().toISOString() })
+    await supabase.from('custom_preferences').upsert({
+      id: 1,
+      general_info: generalInfo,
+      content: weeklyRequests,
+      updated_at: new Date().toISOString(),
+    })
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
-  }
-
-  function handleMealUpdate(updatedMeal) {
-    setMeals(prev => prev.map(m => (m.id === updatedMeal.id ? { ...m, ...updatedMeal } : m)))
   }
 
   if (loading) {
@@ -61,55 +46,53 @@ export default function HomePage() {
     )
   }
 
-  const weekLabel = latestPlan?.week_start
-    ? new Date(latestPlan.week_start + 'T00:00:00').toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : ''
-
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-sm mb-8">
-        <h2 className="font-bold text-stone-800 mb-1">Requests for next week</h2>
+    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-stone-800">Home</h1>
+        <p className="text-stone-400 text-sm mt-1">
+          These are read by the AI every Sunday when it generates the week&apos;s meals.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-sm">
+        <h2 className="font-bold text-stone-800 mb-1">About our family</h2>
         <p className="text-stone-400 text-sm mb-3">
-          Tell the AI anything specific — ingredients you have, who&apos;s eating, dietary needs, anything you&apos;re craving.
+          Permanent info — dietary needs, who&apos;s in the family, cooking skill level, cuisines you love or hate.
         </p>
         <textarea
-          value={preferences}
-          onChange={e => setPreferences(e.target.value)}
-          placeholder="e.g. We have chicken to use up. Dad is visiting so make something impressive. Avoid seafood this week."
+          value={generalInfo}
+          onChange={e => setGeneralInfo(e.target.value)}
+          placeholder="e.g. Family of 4 — two adults, kids aged 8 and 11. No shellfish allergies. Dad doesn't like spicy food. We love Italian and Mexican. Usually cook on a weeknight so nothing that takes over an hour."
+          rows={5}
+          className="w-full text-sm text-stone-600 placeholder-stone-300 border border-stone-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-orange-300 transition-colors"
+        />
+      </div>
+
+      <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-sm">
+        <h2 className="font-bold text-stone-800 mb-1">This week&apos;s requests</h2>
+        <p className="text-stone-400 text-sm mb-3">
+          Anything specific for next week — ingredients to use up, who&apos;s visiting, what you&apos;re craving.
+        </p>
+        <textarea
+          value={weeklyRequests}
+          onChange={e => setWeeklyRequests(e.target.value)}
+          placeholder="e.g. We have a lot of chicken to use up. Grandma is visiting Thursday so make something impressive that night. Avoid pasta this week."
           rows={4}
           className="w-full text-sm text-stone-600 placeholder-stone-300 border border-stone-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-orange-300 transition-colors"
         />
-        <div className="flex items-center gap-3 mt-3">
-          <button
-            onClick={savePreferences}
-            disabled={saving}
-            className="bg-orange-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save for next week'}
-          </button>
-          {saved && <span className="text-green-500 text-sm">Saved!</span>}
-        </div>
       </div>
 
-      {latestPlan && (
-        <>
-          <h2 className="font-bold text-stone-800 text-lg mb-4">This week · {weekLabel}</h2>
-          <div className="space-y-4">
-            {meals.map(meal => (
-              <MealCard
-                key={meal.id}
-                meal={meal}
-                planId={latestPlan.id}
-                onUpdate={handleMealUpdate}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="bg-orange-600 text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        {saved && <span className="text-green-500 text-sm">Saved!</span>}
+      </div>
     </div>
   )
 }

@@ -7,7 +7,8 @@ export default function Layout({ children }) {
         <div className="mb-6 px-2">
           <span className="font-bold text-stone-800 text-base">Dinner Ideas</span>
         </div>
-        <NavLink to="/">This week</NavLink>
+        <NavLink to="/">Home</NavLink>
+        <NavLink to="/this-week">This week</NavLink>
         <NavLink to="/favorites">Favorites</NavLink>
       </aside>
       <main className="flex-1 overflow-auto">

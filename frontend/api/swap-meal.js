@@ -21,7 +21,8 @@ export default async function handler(req, res) {
 
   const prompt = `Suggest ONE alternative dinner for ${mealData.day_of_week} to replace "${mealData.name}".
 Other meals this week: ${otherMeals}.
-Return ONLY a JSON object: {"name": "Meal Name", "description": "One or two sentence description."}`
+Return ONLY a JSON object:
+{"name": "Meal Name", "summary": "One punchy sentence.", "description": "3-4 sentences with detail — flavors, key ingredients, cooking method, why they'll love it.", "cook_time": "X minutes"}`
 
   const result = await groq.chat.completions.create({
     model: 'llama-3.3-70b-versatile',
@@ -32,7 +33,13 @@ Return ONLY a JSON object: {"name": "Meal Name", "description": "One or two sent
 
   const { data: updated } = await supabase
     .from('meals')
-    .update({ name: suggestion.name, description: suggestion.description, swapped: true })
+    .update({
+      name: suggestion.name,
+      summary: suggestion.summary,
+      description: suggestion.description,
+      cook_time: suggestion.cook_time,
+      swapped: true,
+    })
     .eq('id', mealId)
     .select()
     .single()
