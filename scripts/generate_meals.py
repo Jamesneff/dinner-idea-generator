@@ -55,8 +55,16 @@ def fetch_recent_feedback():
     return feedback_summary
 
 
+def fetch_custom_preferences():
+    result = supabase.table("custom_preferences").select("content").eq("id", 1).execute()
+    if result.data and result.data[0].get("content"):
+        return result.data[0]["content"].strip()
+    return ""
+
+
 def build_prompt(feedback):
-    preferences = MEAL_PREFERENCES
+    custom = fetch_custom_preferences()
+    custom_section = f"\nSpecial requests for this week:\n{custom}" if custom else ""
 
     feedback_text = ""
     if feedback:
@@ -77,12 +85,14 @@ def build_prompt(feedback):
 
     return f"""Generate 7 dinner ideas for the week ahead.
 
-Preferences: {preferences}
+Preferences:
+{MEAL_PREFERENCES}
+{custom_section}
 {feedback_text}
 
 Return ONLY a JSON array with exactly 7 objects, one per day:
 [
-  {{"day": "Monday", "name": "Meal Name", "description": "One or two sentence description of the dish."}},
+  {{"day": "Monday", "name": "Meal Name", "description": "3-4 sentences describing the dish — what it tastes like, key ingredients, cooking method, and why the family will enjoy it."}},
   ...
 ]
 

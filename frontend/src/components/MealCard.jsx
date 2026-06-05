@@ -7,6 +7,7 @@ export default function MealCard({ meal, planId, onUpdate }) {
   const [rating, setRating] = useState(existing?.rating ?? null)
   const [madeIt, setMadeIt] = useState(existing?.made_it ?? false)
   const [notes, setNotes] = useState(existing?.notes ?? '')
+  const [favorited, setFavorited] = useState(meal.favorited ?? false)
   const [swapping, setSwapping] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -45,6 +46,12 @@ export default function MealCard({ meal, planId, onUpdate }) {
     }
   }
 
+  async function handleFavorite() {
+    const next = !favorited
+    setFavorited(next)
+    await supabase.from('meals').update({ favorited: next }).eq('id', meal.id)
+  }
+
   async function handleSwap() {
     setSwapping(true)
     const res = await fetch('/api/swap-meal', {
@@ -65,15 +72,34 @@ export default function MealCard({ meal, planId, onUpdate }) {
             {meal.day_of_week}
           </span>
           <h3 className="text-lg font-bold text-stone-800 mt-0.5">{meal.name}</h3>
-          <p className="text-stone-500 text-sm mt-1">{meal.description}</p>
+          <p className="text-stone-500 text-sm mt-1 leading-relaxed">{meal.description}</p>
+          <a
+            href={`https://www.google.com/search?q=${encodeURIComponent(meal.name + ' recipe')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-orange-600 text-sm hover:underline mt-2 inline-block"
+          >
+            Find recipe →
+          </a>
         </div>
-        <button
-          onClick={handleSwap}
-          disabled={swapping}
-          className="shrink-0 text-xs text-stone-400 hover:text-orange-600 border border-stone-200 hover:border-orange-300 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
-        >
-          {swapping ? 'Swapping...' : '↺ Swap'}
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={handleFavorite}
+            title={favorited ? 'Remove from favorites' : 'Add to favorites'}
+            className={`text-2xl transition-colors leading-none ${
+              favorited ? 'text-yellow-400' : 'text-stone-200 hover:text-yellow-300'
+            }`}
+          >
+            ★
+          </button>
+          <button
+            onClick={handleSwap}
+            disabled={swapping}
+            className="text-xs text-stone-400 hover:text-orange-600 border border-stone-200 hover:border-orange-300 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+          >
+            {swapping ? 'Swapping...' : '↺ Swap'}
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-4">

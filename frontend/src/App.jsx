@@ -1,20 +1,17 @@
 import { Routes, Route } from 'react-router-dom'
+import Layout from './components/Layout'
+import HomePage from './components/HomePage'
 import WeekView from './components/WeekView'
+import FavoritesPage from './components/FavoritesPage'
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-stone-50">
+    <Layout>
       <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route path="/week/:planId" element={<WeekView />} />
-        <Route
-          path="*"
-          element={
-            <div className="flex items-center justify-center min-h-screen text-stone-400 text-lg">
-              No meal plan selected.
-            </div>
-          }
-        />
+        <Route path="/favorites" element={<FavoritesPage />} />
       </Routes>
-    </div>
+    </Layout>
   )
 }
