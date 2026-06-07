@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import random
 import urllib.request
 import urllib.parse
 from datetime import date, timedelta
@@ -61,51 +60,53 @@ def fetch_db_preferences():
     return row.get("general_info", "") or "", row.get("content", "") or ""
 
 
-CUISINE_TO_CATEGORY = {
-    "chicken": "Chicken", "beef": "Beef", "pork": "Pork", "lamb": "Lamb",
-    "fish": "Seafood", "shrimp": "Seafood", "prawn": "Seafood",
-    "salmon": "Seafood", "tuna": "Seafood", "pasta": "Pasta",
-    "noodle": "Pasta", "vegetarian": "Vegetarian", "vegan": "Vegetarian",
-}
-
-
-def _category_image(meal_name):
-    name_lower = meal_name.lower()
-    category = next(
-        (cat for kw, cat in CUISINE_TO_CATEGORY.items() if kw in name_lower),
-        "Miscellaneous",
-    )
+def lookup_spoonacular(meal_name):
+    api_key = os.environ.get("SPOONACULAR_API_KEY", "")
+    if not api_key:
+        print(f"  No Spoonacular API key set")
+        return None
     try:
-        url = f"https://www.themealdb.com/api/json/v1/1/filter.php?c={urllib.parse.quote(category)}"
+        params = urllib.parse.urlencode({
+            "query": meal_name,
+            "number": 1,
+            "addRecipeInformation": "true",
+            "instructionsRequired": "true",
+            "apiKey": api_key,
+        })
+        url = f"https://api.spoonacular.com/recipes/complexSearch?{params}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read())
-        meals = data.get("meals") or []
-        if meals:
-            return random.choice(meals[:20]).get("strMealThumb")
-    except Exception:
-        pass
-    return None
-
-
-def lookup_themealdb(meal_name):
-    try:
-        encoded = urllib.parse.quote(meal_name)
-        url = f"https://www.themealdb.com/api/json/v1/1/search.php?s={encoded}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read())
 
-        meal = (data.get("meals") or [None])[0]
-        if meal:
-            return {
-                "image_url": meal.get("strMealThumb"),
-                "recipe_url": meal.get("strSource") or None,
-            }
+        results = data.get("results") or []
+        if not results:
+            print(f"  No Spoonacular match for: {meal_name}")
+            return None
+
+        recipe = results[0]
+        print(f"  Matched '{recipe.get('title')}' for: {meal_name}")
+
+        ingredients = []
+        for ing in recipe.get("extendedIngredients") or []:
+            name = (ing.get("name") or "").strip()
+            amount = ing.get("amount", "")
+            unit = (ing.get("unit") or "").strip()
+            measure = f"{amount} {unit}".strip() if amount else unit
+            if name:
+                ingredients.append({"measure": measure, "ingredient": name})
+
+        steps = (recipe.get("analyzedInstructions") or [{}])[0].get("steps") or []
+        instructions = "\n".join(f"{s['number']}. {s['step']}" for s in steps) or None
+
+        return {
+            "image_url": recipe.get("image") or None,
+            "recipe_url": recipe.get("sourceUrl") or None,
+            "ingredients": ingredients or None,
+            "instructions": instructions,
+        }
     except Exception as e:
-        print(f"  TheMealDB lookup failed for '{meal_name}': {e}")
-
-    return {"image_url": _category_image(meal_name), "recipe_url": None}
+        print(f"  Spoonacular lookup failed for '{meal_name}': {e}")
+        return None
 
 
 def build_prompt(feedback):
@@ -143,18 +144,12 @@ Return ONLY a JSON array with exactly 7 objects, one per day:
     "name": "Meal Name",
     "summary": "One punchy sentence for the email — what it is and why it's great.",
     "description": "3-4 sentences — flavors, key ingredients, cooking method, and why the family will love it.",
-    "cook_time": "30 minutes",
-    "ingredients": [
-      {{"measure": "1 lb", "ingredient": "chicken breast"}},
-      {{"measure": "2 cloves", "ingredient": "garlic"}},
-      {{"measure": "1 tbsp", "ingredient": "olive oil"}}
-    ],
-    "instructions": "1. Season chicken with salt and pepper.\\n2. Heat oil in a skillet over medium-high heat.\\n3. Cook chicken 5 minutes per side until golden."
+    "cook_time": "30 minutes"
   }},
   ...
 ]
 
-Include 8-15 ingredients and 5-8 clear numbered steps per meal. Make meals varied, practical, and appealing. No markdown, just the JSON array."""
+Use common recipe names that would be found on cooking websites (e.g. "Chicken Tikka Masala", "Beef Tacos", "Shrimp Fried Rice"). Make meals varied, practical, and appealing. No markdown, just the JSON array."""
 
 
 def generate_meals():
@@ -183,23 +178,18 @@ def save_meal_plan(meals):
             "summary": m.get("summary", ""),
             "description": m.get("description", ""),
             "cook_time": m.get("cook_time", ""),
-            "ingredients": m.get("ingredients") or None,
-            "instructions": m.get("instructions") or None,
         }
         for m in meals
     ]
     result = supabase.table("meals").insert(meal_rows).execute()
 
-    # Enrich with image and recipe URL from TheMealDB (category fallback for image)
     for i, meal_data in enumerate(result.data):
-        print(f"  Fetching image for: {meals[i]['name']}")
-        media = lookup_themealdb(meals[i]["name"])
-        if media.get("image_url") or media.get("recipe_url"):
-            supabase.table("meals").update(media).eq("id", meal_data["id"]).execute()
-            label = "exact match" if media.get("recipe_url") else "category image"
-            print(f"  Got {label} for: {meals[i]['name']}")
+        print(f"  Looking up recipe for: {meals[i]['name']}")
+        recipe = lookup_spoonacular(meals[i]["name"])
+        if recipe:
+            supabase.table("meals").update(recipe).eq("id", meal_data["id"]).execute()
         else:
-            print(f"  No image found for: {meals[i]['name']}")
+            print(f"  No recipe data found for: {meals[i]['name']}")
 
     return plan_id
 
@@ -258,7 +248,6 @@ def build_email_html(meals_with_data, plan_id):
 
 
 def send_email(meals, plan_id):
-    # Fetch saved meals with recipe_url for the email
     result = supabase.table("meals").select("*").eq("meal_plan_id", plan_id).execute()
     meals_with_data = sorted(
         result.data,

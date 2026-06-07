@@ -21,3 +21,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          SPOONACULAR_API_KEY: ${{ secrets.SPOONACULAR_API_KEY }}
