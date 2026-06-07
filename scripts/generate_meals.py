@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import random
 import urllib.request
 import urllib.parse
 from datetime import date, timedelta
@@ -60,6 +61,33 @@ def fetch_db_preferences():
     return row.get("general_info", "") or "", row.get("content", "") or ""
 
 
+CUISINE_TO_CATEGORY = {
+    "chicken": "Chicken", "beef": "Beef", "pork": "Pork", "lamb": "Lamb",
+    "fish": "Seafood", "shrimp": "Seafood", "prawn": "Seafood",
+    "salmon": "Seafood", "tuna": "Seafood", "pasta": "Pasta",
+    "noodle": "Pasta", "vegetarian": "Vegetarian", "vegan": "Vegetarian",
+}
+
+
+def _category_image(meal_name):
+    name_lower = meal_name.lower()
+    category = next(
+        (cat for kw, cat in CUISINE_TO_CATEGORY.items() if kw in name_lower),
+        "Miscellaneous",
+    )
+    try:
+        url = f"https://www.themealdb.com/api/json/v1/1/filter.php?c={urllib.parse.quote(category)}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read())
+        meals = data.get("meals") or []
+        if meals:
+            return random.choice(meals[:20]).get("strMealThumb")
+    except Exception:
+        pass
+    return None
+
+
 def lookup_themealdb(meal_name):
     try:
         encoded = urllib.parse.quote(meal_name)
@@ -69,25 +97,15 @@ def lookup_themealdb(meal_name):
             data = json.loads(response.read())
 
         meal = (data.get("meals") or [None])[0]
-        if not meal:
-            return None
-
-        ingredients = []
-        for i in range(1, 21):
-            ingredient = (meal.get(f"strIngredient{i}") or "").strip()
-            measure = (meal.get(f"strMeasure{i}") or "").strip()
-            if ingredient:
-                ingredients.append({"ingredient": ingredient, "measure": measure})
-
-        return {
-            "image_url": meal.get("strMealThumb"),
-            "recipe_url": meal.get("strSource") or None,
-            "ingredients": ingredients,
-            "instructions": meal.get("strInstructions") or None,
-        }
+        if meal:
+            return {
+                "image_url": meal.get("strMealThumb"),
+                "recipe_url": meal.get("strSource") or None,
+            }
     except Exception as e:
         print(f"  TheMealDB lookup failed for '{meal_name}': {e}")
-        return None
+
+    return {"image_url": _category_image(meal_name), "recipe_url": None}
 
 
 def build_prompt(feedback):
@@ -125,12 +143,18 @@ Return ONLY a JSON array with exactly 7 objects, one per day:
     "name": "Meal Name",
     "summary": "One punchy sentence for the email — what it is and why it's great.",
     "description": "3-4 sentences — flavors, key ingredients, cooking method, and why the family will love it.",
-    "cook_time": "30 minutes"
+    "cook_time": "30 minutes",
+    "ingredients": [
+      {{"measure": "1 lb", "ingredient": "chicken breast"}},
+      {{"measure": "2 cloves", "ingredient": "garlic"}},
+      {{"measure": "1 tbsp", "ingredient": "olive oil"}}
+    ],
+    "instructions": "1. Season chicken with salt and pepper.\\n2. Heat oil in a skillet over medium-high heat.\\n3. Cook chicken 5 minutes per side until golden."
   }},
   ...
 ]
 
-Make meals varied, practical, and appealing. No markdown, just the JSON array."""
+Include 8-15 ingredients and 5-8 clear numbered steps per meal. Make meals varied, practical, and appealing. No markdown, just the JSON array."""
 
 
 def generate_meals():
@@ -159,20 +183,23 @@ def save_meal_plan(meals):
             "summary": m.get("summary", ""),
             "description": m.get("description", ""),
             "cook_time": m.get("cook_time", ""),
+            "ingredients": m.get("ingredients") or None,
+            "instructions": m.get("instructions") or None,
         }
         for m in meals
     ]
     result = supabase.table("meals").insert(meal_rows).execute()
 
-    # Enrich each meal with recipe data from TheMealDB
+    # Enrich with image and recipe URL from TheMealDB (category fallback for image)
     for i, meal_data in enumerate(result.data):
-        print(f"  Looking up recipe for: {meals[i]['name']}")
-        recipe = lookup_themealdb(meals[i]["name"])
-        if recipe:
-            supabase.table("meals").update(recipe).eq("id", meal_data["id"]).execute()
-            print(f"  Found recipe data for: {meals[i]['name']}")
+        print(f"  Fetching image for: {meals[i]['name']}")
+        media = lookup_themealdb(meals[i]["name"])
+        if media.get("image_url") or media.get("recipe_url"):
+            supabase.table("meals").update(media).eq("id", meal_data["id"]).execute()
+            label = "exact match" if media.get("recipe_url") else "category image"
+            print(f"  Got {label} for: {meals[i]['name']}")
         else:
-            print(f"  No TheMealDB match for: {meals[i]['name']}")
+            print(f"  No image found for: {meals[i]['name']}")
 
     return plan_id
 
