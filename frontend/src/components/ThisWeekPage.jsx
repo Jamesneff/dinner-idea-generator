@@ -15,7 +15,7 @@ export default function ThisWeekPage() {
       const { data, error } = await supabase
         .from('meal_plans')
         .select('id, week_start, meals(*, feedback(*))')
-        .order('week_start', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .single()
 
