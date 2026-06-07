@@ -1,34 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-
-function useMealDbData(mealName) {
-  const [data, setData] = useState(null)
-
-  useEffect(() => {
-    if (!mealName) return
-    async function fetch_() {
-      try {
-        const res = await fetch(
-          `https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(mealName)}`
-        )
-        const json = await res.json()
-        const meal = json.meals?.[0]
-        if (meal) {
-          setData({
-            image: meal.strMealThumb,
-            source: meal.strSource || null,
-            youtube: meal.strYoutube || null,
-          })
-        }
-      } catch {
-        // silently fail — recipe link falls back to search
-      }
-    }
-    fetch_()
-  }, [mealName])
-
-  return data
-}
 
 export default function MealCard({ meal, planId, onUpdate }) {
   const existing = meal.feedback?.[0]
@@ -40,24 +11,33 @@ export default function MealCard({ meal, planId, onUpdate }) {
   const [swapping, setSwapping] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [checkedIngredients, setCheckedIngredients] = useState([])
 
-  const mealDbData = useMealDbData(meal.name)
+  const ingredients = meal.ingredients || []
+  const steps = meal.instructions
+    ? meal.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    : []
   const recipeUrl =
-    mealDbData?.source ||
-    mealDbData?.youtube ||
+    meal.recipe_url ||
     `https://www.allrecipes.com/search?q=${encodeURIComponent(meal.name)}`
+  const recipeLabel = meal.recipe_url ? 'View recipe →' : 'Find recipe →'
+
+  function toggleIngredient(i) {
+    setCheckedIngredients(prev =>
+      prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
+    )
+  }
 
   async function saveFeedback(updates) {
     setSaving(true)
     const payload = { meal_id: meal.id, ...updates }
-
     if (feedbackId) {
       await supabase.from('feedback').update(payload).eq('id', feedbackId)
     } else {
       const { data } = await supabase.from('feedback').insert(payload).select().single()
       if (data) setFeedbackId(data.id)
     }
-
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -75,8 +55,7 @@ export default function MealCard({ meal, planId, onUpdate }) {
   }
 
   async function handleNotesBlur() {
-    const original = existing?.notes ?? ''
-    if (notes !== original) {
+    if (notes !== (existing?.notes ?? '')) {
       await saveFeedback({ rating, made_it: madeIt, notes })
     }
   }
@@ -97,16 +76,14 @@ export default function MealCard({ meal, planId, onUpdate }) {
     const data = await res.json()
     if (data.meal) onUpdate(data.meal)
     setSwapping(false)
+    setExpanded(false)
+    setCheckedIngredients([])
   }
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
-      {mealDbData?.image && (
-        <img
-          src={mealDbData.image + '/preview'}
-          alt={meal.name}
-          className="w-full h-44 object-cover"
-        />
+      {meal.image_url && (
+        <img src={meal.image_url} alt={meal.name} className="w-full h-48 object-cover" />
       )}
 
       <div className="p-5">
@@ -128,7 +105,7 @@ export default function MealCard({ meal, planId, onUpdate }) {
               rel="noopener noreferrer"
               className="text-orange-600 text-sm hover:underline mt-2 inline-block"
             >
-              {mealDbData?.source ? 'View recipe →' : mealDbData?.youtube ? 'Watch recipe →' : 'Find recipe →'}
+              {recipeLabel}
             </a>
           </div>
 
@@ -151,6 +128,69 @@ export default function MealCard({ meal, planId, onUpdate }) {
             </button>
           </div>
         </div>
+
+        {(ingredients.length > 0 || steps.length > 0) && (
+          <div className="mt-3">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm text-stone-500 hover:text-stone-700 transition-colors"
+            >
+              {expanded ? '▲ Hide ingredients & steps' : '▼ Ingredients & steps'}
+            </button>
+
+            {expanded && (
+              <div className="mt-3 space-y-4">
+                {ingredients.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
+                      Ingredients
+                    </h4>
+                    <ul className="space-y-1">
+                      {ingredients.map((ing, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checkedIngredients.includes(i)}
+                            onChange={() => toggleIngredient(i)}
+                            className="w-4 h-4 accent-orange-500 rounded"
+                          />
+                          <span
+                            className={`text-sm transition-colors ${
+                              checkedIngredients.includes(i)
+                                ? 'line-through text-stone-300'
+                                : 'text-stone-600'
+                            }`}
+                          >
+                            {ing.measure && (
+                              <span className="text-stone-400">{ing.measure} </span>
+                            )}
+                            {ing.ingredient}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {steps.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
+                      Steps
+                    </h4>
+                    <ol className="space-y-2">
+                      {steps.map((step, i) => (
+                        <li key={i} className="flex gap-3 text-sm text-stone-600">
+                          <span className="text-orange-400 font-bold shrink-0">{i + 1}.</span>
+                          <span className="leading-relaxed">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-0.5">
