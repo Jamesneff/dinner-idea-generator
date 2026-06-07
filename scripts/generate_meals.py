@@ -198,7 +198,7 @@ def build_email_html(meals_with_data, plan_id):
         )
         meal_rows += f"""
         <tr>
-          <td style="padding:12px 16px;border-bottom:1px solid #f0e8dc;font-weight:600;color:#92400e;width:110px;vertical-align:top;">{meal['day']}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0e8dc;font-weight:600;color:#92400e;width:110px;vertical-align:top;">{meal['day_of_week']}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #f0e8dc;">
             <strong style="color:#1c1917;">{meal['name']}</strong>{time_tag}<br>
             <span style="color:#78716c;font-size:14px;">{meal.get('summary', '')}</span>
