@@ -11,7 +11,8 @@ export default function MealCard({ meal, planId, onUpdate }) {
   const [swapping, setSwapping] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [showIngredients, setShowIngredients] = useState(false)
+  const [showSteps, setShowSteps] = useState(false)
   const [checkedIngredients, setCheckedIngredients] = useState([])
 
   const ingredients = meal.ingredients || []
@@ -76,7 +77,8 @@ export default function MealCard({ meal, planId, onUpdate }) {
     const data = await res.json()
     if (data.meal) onUpdate(data.meal)
     setSwapping(false)
-    setExpanded(false)
+    setShowIngredients(false)
+    setShowSteps(false)
     setCheckedIngredients([])
   }
 
@@ -99,14 +101,25 @@ export default function MealCard({ meal, planId, onUpdate }) {
             </span>
             <h3 className="text-lg font-bold text-stone-800 mt-0.5">{meal.name}</h3>
             <p className="text-stone-500 text-sm mt-1 leading-relaxed">{meal.description}</p>
-            <a
-              href={recipeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-orange-600 text-sm hover:underline mt-2 inline-block"
-            >
-              {recipeLabel}
-            </a>
+            <div className="flex items-center gap-3 mt-2">
+              <a
+                href={recipeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-orange-600 text-sm hover:underline"
+              >
+                {recipeLabel}
+              </a>
+              <span className="text-stone-200">·</span>
+              <a
+                href={`https://www.allrecipes.com/search?q=${encodeURIComponent(meal.name)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-stone-400 text-sm hover:text-orange-600 hover:underline"
+              >
+                Search Allrecipes →
+              </a>
+            </div>
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
@@ -129,67 +142,61 @@ export default function MealCard({ meal, planId, onUpdate }) {
           </div>
         </div>
 
-        {(ingredients.length > 0 || steps.length > 0) && (
-          <div className="mt-3">
+        <div className="mt-3 flex gap-3">
+          {ingredients.length > 0 && (
             <button
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => setShowIngredients(!showIngredients)}
               className="text-sm text-stone-500 hover:text-stone-700 transition-colors"
             >
-              {expanded ? '▲ Hide ingredients & steps' : '▼ Ingredients & steps'}
+              {showIngredients ? '▲ Ingredients' : '▼ Ingredients'}
             </button>
+          )}
+          {steps.length > 0 && (
+            <button
+              onClick={() => setShowSteps(!showSteps)}
+              className="text-sm text-stone-500 hover:text-stone-700 transition-colors"
+            >
+              {showSteps ? '▲ Directions' : '▼ Directions'}
+            </button>
+          )}
+        </div>
 
-            {expanded && (
-              <div className="mt-3 space-y-4">
-                {ingredients.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
-                      Ingredients
-                    </h4>
-                    <ul className="space-y-1">
-                      {ingredients.map((ing, i) => (
-                        <li key={i} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={checkedIngredients.includes(i)}
-                            onChange={() => toggleIngredient(i)}
-                            className="w-4 h-4 accent-orange-500 rounded"
-                          />
-                          <span
-                            className={`text-sm transition-colors ${
-                              checkedIngredients.includes(i)
-                                ? 'line-through text-stone-300'
-                                : 'text-stone-600'
-                            }`}
-                          >
-                            {ing.measure && (
-                              <span className="text-stone-400">{ing.measure} </span>
-                            )}
-                            {ing.ingredient}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+        {showIngredients && ingredients.length > 0 && (
+          <ul className="mt-3 space-y-1">
+            {ingredients.map((ing, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={checkedIngredients.includes(i)}
+                  onChange={() => toggleIngredient(i)}
+                  className="w-4 h-4 accent-orange-500 rounded"
+                />
+                <span
+                  className={`text-sm transition-colors ${
+                    checkedIngredients.includes(i)
+                      ? 'line-through text-stone-300'
+                      : 'text-stone-600'
+                  }`}
+                >
+                  {ing.measure && (
+                    <span className="text-stone-400">{ing.measure} </span>
+                  )}
+                  {ing.ingredient}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
 
-                {steps.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
-                      Steps
-                    </h4>
-                    <ol className="space-y-2">
-                      {steps.map((step, i) => (
-                        <li key={i} className="flex gap-3 text-sm text-stone-600">
-                          <span className="text-orange-400 font-bold shrink-0">{i + 1}.</span>
-                          <span className="leading-relaxed">{step}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+        {showSteps && steps.length > 0 && (
+          <ol className="mt-3 space-y-2">
+            {steps.map((step, i) => (
+              <li key={i} className="flex gap-3 text-sm text-stone-600">
+                <span className="text-orange-400 font-bold shrink-0">{i + 1}.</span>
+                <span className="leading-relaxed">{step}</span>
+              </li>
+            ))}
+          </ol>
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-4">
