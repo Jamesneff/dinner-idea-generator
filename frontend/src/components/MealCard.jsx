@@ -23,6 +23,10 @@ export default function MealCard({ meal, planId, onUpdate }) {
     meal.recipe_url ||
     `https://www.allrecipes.com/search?q=${encodeURIComponent(meal.name)}`
   const recipeLabel = meal.recipe_url ? 'View recipe →' : 'Find recipe →'
+  // Upgrade older low-res Spoonacular thumbnails to the largest size
+  const imageUrl = meal.image_url
+    ? meal.image_url.replace(/-\d+x\d+(\.\w+)$/, '-636x393$1')
+    : null
 
   function toggleIngredient(i) {
     setCheckedIngredients(prev =>
@@ -84,8 +88,13 @@ export default function MealCard({ meal, planId, onUpdate }) {
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
-      {meal.image_url && (
-        <img src={meal.image_url} alt={meal.name} className="w-full h-48 object-cover" />
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt={meal.name}
+          loading="lazy"
+          className="w-full aspect-[16/9] object-cover object-center bg-stone-100"
+        />
       )}
 
       <div className="p-5">

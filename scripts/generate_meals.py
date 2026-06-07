@@ -62,14 +62,34 @@ def fetch_db_preferences():
     return row.get("general_info", "") or "", row.get("content", "") or ""
 
 
-def lookup_spoonacular(meal_name):
+def hi_res_image(url):
+    """Spoonacular images come in fixed sizes; upgrade to the largest (636x393)."""
+    if not url:
+        return None
+    return re.sub(r"-\d+x\d+(\.\w+)$", r"-636x393\1", url)
+
+
+def plain_instructions(info):
+    """Fall back to the plain `instructions` field when analyzedInstructions is empty."""
+    raw = (info.get("instructions") or "").strip()
+    if not raw:
+        return None
+    # Strip HTML tags (some recipes return <ol><li> markup) and split into steps
+    text = re.sub(r"<[^>]+>", "\n", raw)
+    text = re.sub(r"&[a-z]+;", " ", text)
+    parts = [p.strip() for p in re.split(r"\r?\n|(?<=[.!?])\s+(?=[A-Z])", text) if p.strip()]
+    return "\n".join(parts) or None
+
+
+def lookup_spoonacular(search_query, display_name=None):
     api_key = os.environ.get("SPOONACULAR_API_KEY", "")
+    label = display_name or search_query
     if not api_key:
         print(f"  No Spoonacular API key set")
         return None
     try:
         # Step 1: find the recipe ID and image
-        params = urllib.parse.urlencode({"query": meal_name, "number": 1, "apiKey": api_key})
+        params = urllib.parse.urlencode({"query": search_query, "number": 1, "apiKey": api_key})
         req = urllib.request.Request(
             f"https://api.spoonacular.com/recipes/complexSearch?{params}",
             headers={"User-Agent": "Mozilla/5.0"},
@@ -78,7 +98,7 @@ def lookup_spoonacular(meal_name):
             results = json.loads(r.read()).get("results") or []
 
         if not results:
-            print(f"  No Spoonacular match for: {meal_name}")
+            print(f"  No Spoonacular match for '{label}' (query: '{search_query}')")
             return None
 
         recipe_id = results[0]["id"]
@@ -92,7 +112,7 @@ def lookup_spoonacular(meal_name):
         with urllib.request.urlopen(req2, timeout=10) as r2:
             info = json.loads(r2.read())
 
-        print(f"  Matched '{info.get('title')}' for: {meal_name}")
+        print(f"  Matched '{info.get('title')}' for: {label}")
 
         ingredients = []
         for ing in info.get("extendedIngredients") or []:
@@ -105,16 +125,16 @@ def lookup_spoonacular(meal_name):
 
         steps = (info.get("analyzedInstructions") or [{}])[0].get("steps") or []
         # Store plain step text — MealCard handles numbering in the UI
-        instructions = "\n".join(s["step"] for s in steps) or None
+        instructions = "\n".join(s["step"] for s in steps) or plain_instructions(info)
 
         return {
-            "image_url": image_url or info.get("image") or None,
+            "image_url": hi_res_image(image_url or info.get("image")),
             "recipe_url": info.get("sourceUrl") or None,
             "ingredients": ingredients or None,
             "instructions": instructions,
         }
     except Exception as e:
-        print(f"  Spoonacular lookup failed for '{meal_name}': {e}")
+        print(f"  Spoonacular lookup failed for '{label}': {e}")
         return None
 
 
@@ -150,7 +170,8 @@ Return ONLY a JSON array with exactly 7 objects, one per day:
 [
   {{
     "day": "Monday",
-    "name": "Meal Name",
+    "name": "Creative Meal Name",
+    "search_query": "Simple Dish Name",
     "summary": "One punchy sentence for the email — what it is and why it's great.",
     "description": "3-4 sentences — flavors, key ingredients, cooking method, and why the family will love it.",
     "cook_time": "30 minutes"
@@ -158,7 +179,13 @@ Return ONLY a JSON array with exactly 7 objects, one per day:
   ...
 ]
 
-Use common recipe names that would be found on cooking websites (e.g. "Chicken Tikka Masala", "Beef Tacos", "Shrimp Fried Rice"). Make meals varied, practical, and appealing. No markdown, just the JSON array."""
+"name" can be creative/descriptive. "search_query" MUST be a simple, common 1-3 word recipe name that exists on cooking websites — the core dish only, no side dishes or extra adjectives. Examples:
+- name "Baked Cod with Mediterranean Quinoa" -> search_query "Baked Cod"
+- name "Shrimp and Chicken Jambalaya" -> search_query "Jambalaya"
+- name "Chicken and Vegetable Stir-Fry" -> search_query "Chicken Stir Fry"
+- name "Grilled Chicken Skewers with Pasta Salad" -> search_query "Grilled Chicken Skewers"
+
+Make meals varied, practical, and appealing. No markdown, just the JSON array."""
 
 
 def generate_meals():
@@ -193,12 +220,17 @@ def save_meal_plan(meals):
     result = supabase.table("meals").insert(meal_rows).execute()
 
     for i, meal_data in enumerate(result.data):
-        print(f"  Looking up recipe for: {meals[i]['name']}")
-        recipe = lookup_spoonacular(meals[i]["name"])
+        m = meals[i]
+        query = m.get("search_query") or m["name"]
+        print(f"  Looking up recipe for: {m['name']}")
+        # Try the simple search query first, fall back to the full name
+        recipe = lookup_spoonacular(query, m["name"])
+        if not recipe and query != m["name"]:
+            recipe = lookup_spoonacular(m["name"], m["name"])
         if recipe:
             supabase.table("meals").update(recipe).eq("id", meal_data["id"]).execute()
         else:
-            print(f"  No recipe data found for: {meals[i]['name']}")
+            print(f"  No recipe data found for: {m['name']}")
 
     return plan_id
 
