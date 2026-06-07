@@ -66,28 +66,34 @@ def lookup_spoonacular(meal_name):
         print(f"  No Spoonacular API key set")
         return None
     try:
-        params = urllib.parse.urlencode({
-            "query": meal_name,
-            "number": 1,
-            "addRecipeInformation": "true",
-            "instructionsRequired": "true",
-            "apiKey": api_key,
-        })
-        url = f"https://api.spoonacular.com/recipes/complexSearch?{params}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read())
+        # Step 1: find the recipe ID and image
+        params = urllib.parse.urlencode({"query": meal_name, "number": 1, "apiKey": api_key})
+        req = urllib.request.Request(
+            f"https://api.spoonacular.com/recipes/complexSearch?{params}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            results = json.loads(r.read()).get("results") or []
 
-        results = data.get("results") or []
         if not results:
             print(f"  No Spoonacular match for: {meal_name}")
             return None
 
-        recipe = results[0]
-        print(f"  Matched '{recipe.get('title')}' for: {meal_name}")
+        recipe_id = results[0]["id"]
+        image_url = results[0].get("image")
+
+        # Step 2: fetch full recipe info (ingredients + instructions)
+        req2 = urllib.request.Request(
+            f"https://api.spoonacular.com/recipes/{recipe_id}/information?includeNutrition=false&apiKey={api_key}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req2, timeout=10) as r2:
+            info = json.loads(r2.read())
+
+        print(f"  Matched '{info.get('title')}' for: {meal_name}")
 
         ingredients = []
-        for ing in recipe.get("extendedIngredients") or []:
+        for ing in info.get("extendedIngredients") or []:
             name = (ing.get("name") or "").strip()
             amount = ing.get("amount", "")
             unit = (ing.get("unit") or "").strip()
@@ -95,12 +101,13 @@ def lookup_spoonacular(meal_name):
             if name:
                 ingredients.append({"measure": measure, "ingredient": name})
 
-        steps = (recipe.get("analyzedInstructions") or [{}])[0].get("steps") or []
-        instructions = "\n".join(f"{s['number']}. {s['step']}" for s in steps) or None
+        steps = (info.get("analyzedInstructions") or [{}])[0].get("steps") or []
+        # Store plain step text — MealCard handles numbering in the UI
+        instructions = "\n".join(s["step"] for s in steps) or None
 
         return {
-            "image_url": recipe.get("image") or None,
-            "recipe_url": recipe.get("sourceUrl") or None,
+            "image_url": image_url or info.get("image") or None,
+            "recipe_url": info.get("sourceUrl") or None,
             "ingredients": ingredients or None,
             "instructions": instructions,
         }

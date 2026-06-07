@@ -8,31 +8,33 @@ async function lookupSpoonacular(mealName) {
   const apiKey = process.env.SPOONACULAR_API_KEY
   if (!apiKey) return null
   try {
-    const params = new URLSearchParams({
-      query: mealName,
-      number: '1',
-      addRecipeInformation: 'true',
-      instructionsRequired: 'true',
-      apiKey,
-    })
-    const res = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${params}`)
-    const data = await res.json()
-    const recipe = data.results?.[0]
-    if (!recipe) return null
+    // Step 1: find recipe ID and image
+    const searchParams = new URLSearchParams({ query: mealName, number: '1', apiKey })
+    const searchRes = await fetch(`https://api.spoonacular.com/recipes/complexSearch?${searchParams}`)
+    const searchData = await searchRes.json()
+    const first = searchData.results?.[0]
+    if (!first) return null
 
-    const ingredients = (recipe.extendedIngredients || [])
+    // Step 2: fetch full recipe info (ingredients + instructions)
+    const infoRes = await fetch(
+      `https://api.spoonacular.com/recipes/${first.id}/information?includeNutrition=false&apiKey=${apiKey}`
+    )
+    const info = await infoRes.json()
+
+    const ingredients = (info.extendedIngredients || [])
       .filter(ing => ing.name)
       .map(ing => ({
         measure: [ing.amount, ing.unit].filter(Boolean).join(' ').trim(),
         ingredient: ing.name,
       }))
 
-    const steps = recipe.analyzedInstructions?.[0]?.steps || []
-    const instructions = steps.map(s => `${s.number}. ${s.step}`).join('\n') || null
+    const steps = info.analyzedInstructions?.[0]?.steps || []
+    // Store plain step text — MealCard handles numbering in the UI
+    const instructions = steps.map(s => s.step).join('\n') || null
 
     return {
-      image_url: recipe.image || null,
-      recipe_url: recipe.sourceUrl || null,
+      image_url: first.image || info.image || null,
+      recipe_url: info.sourceUrl || null,
       ingredients: ingredients.length ? ingredients : null,
       instructions,
     }

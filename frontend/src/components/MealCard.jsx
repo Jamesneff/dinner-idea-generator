@@ -17,7 +17,7 @@ export default function MealCard({ meal, planId, onUpdate }) {
 
   const ingredients = meal.ingredients || []
   const steps = meal.instructions
-    ? meal.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    ? meal.instructions.split(/\r?\n/).map(s => s.trim().replace(/^\d+\.\s*/, '')).filter(Boolean)
     : []
   const recipeUrl =
     meal.recipe_url ||
