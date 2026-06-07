@@ -23,11 +23,13 @@ RECIPIENT_EMAILS = [
 SENDER_EMAIL = "onboarding@resend.dev"
 
 MEAL_PREFERENCES = """
-- Family of 3, no food allergies
-- Prefer weeknight meals that take under 45 minutes
-- Enjoy Italian, Mexican, and Asian cuisines
+- Family of 4, no food allergies
+- Avoid beef
+- Dislike Indian food
+- Enjoy fish and chicken primarily as meats
+- Prefer weeknight meals that take under an hour
+- Enjoy Italian, Mediterranean, American, Mexican, and Asian cuisines
 - Mix of simple and slightly more adventurous meals
-- Avoid heavy or overly rich dishes
 """
 
 
