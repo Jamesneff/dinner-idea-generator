@@ -309,7 +309,7 @@ def send_email(meals, plan_id):
     msg.attach(MIMEText(html_body, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(SENDER_EMAIL, os.environ["GMAIL_APP_PASSWORD"])
+        smtp.login(SENDER_EMAIL, os.environ["GMAIL_APP_PASSWORD"].strip())
         smtp.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
 
 
