@@ -17,7 +17,8 @@ jobs:
       - run: python scripts/generate_meals.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}

@@ -6,13 +6,14 @@ import urllib.parse
 from datetime import date, timedelta
 from dotenv import load_dotenv
 from groq import Groq
-import resend
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from supabase import create_client
 
 load_dotenv()
 
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
-resend.api_key = os.environ["RESEND_API_KEY"]
 supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -21,7 +22,7 @@ RECIPIENT_EMAILS = [
     "jamesneff07@gmail.com",
     "janiceneff@yahoo.com",
 ]
-SENDER_EMAIL = "onboarding@resend.dev"
+SENDER_EMAIL = os.environ.get("GMAIL_SENDER", "jamesneff07@gmail.com")
 
 MEAL_PREFERENCES = """
 - Family of 4, no food allergies
@@ -300,12 +301,16 @@ def send_email(meals, plan_id):
     week_start = today - timedelta(days=today.weekday())
     subject = f"Your dinner ideas for the week of {week_start.strftime('%B %d')}"
 
-    resend.Emails.send({
-        "from": SENDER_EMAIL,
-        "to": RECIPIENT_EMAILS,
-        "subject": subject,
-        "html": build_email_html(meals_with_data, plan_id),
-    })
+    html_body = build_email_html(meals_with_data, plan_id)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = ", ".join(RECIPIENT_EMAILS)
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(SENDER_EMAIL, os.environ["GMAIL_APP_PASSWORD"])
+        smtp.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
 
 
 def main():
