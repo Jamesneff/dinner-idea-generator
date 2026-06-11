@@ -19,6 +19,7 @@ DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sun
 
 RECIPIENT_EMAILS = [
     "jamesneff07@gmail.com",
+    "janiceneff@yahoo.com",
 ]
 SENDER_EMAIL = "onboarding@resend.dev"
 
