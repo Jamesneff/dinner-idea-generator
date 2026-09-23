@@ -21,6 +21,8 @@ jobs:
         run: |
           echo "Sender: $GMAIL_SENDER"
           echo "Password length: ${#GMAIL_APP_PASSWORD}"
+      - name: Ping healthchecks.io (start)
+        run: curl -fsS -m 10 --retry 3 "${{ secrets.HEALTHCHECKS_URL }}/start" || true
       - run: python scripts/generate_meals.py
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -30,3 +32,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           SPOONACULAR_API_KEY: ${{ secrets.SPOONACULAR_API_KEY }}
+      - name: Ping healthchecks.io (success)
+        if: success()
+        run: curl -fsS -m 10 --retry 3 "${{ secrets.HEALTHCHECKS_URL }}" || true
+      - name: Ping healthchecks.io (failure)
+        if: failure()
+        run: curl -fsS -m 10 --retry 3 "${{ secrets.HEALTHCHECKS_URL }}/fail" || true
