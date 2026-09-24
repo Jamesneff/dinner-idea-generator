@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useHousehold } from '../lib/household'
 import MealCard from './MealCard'
 
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 export default function ThisWeekPage() {
+  const { householdId } = useHousehold()
   const [plan, setPlan] = useState(null)
   const [meals, setMeals] = useState([])
   const [loading, setLoading] = useState(true)
@@ -15,6 +17,7 @@ export default function ThisWeekPage() {
       const { data, error } = await supabase
         .from('meal_plans')
         .select('id, week_start, meals(*, feedback(*))')
+        .eq('household_id', householdId)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
@@ -32,7 +35,7 @@ export default function ThisWeekPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [householdId])
 
   function handleMealUpdate(updatedMeal) {
     setMeals(prev => prev.map(m => (m.id === updatedMeal.id ? { ...m, ...updatedMeal } : m)))

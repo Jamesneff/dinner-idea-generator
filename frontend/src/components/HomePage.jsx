@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useHousehold } from '../lib/household'
 
 export default function HomePage() {
+  const { householdId } = useHousehold()
   const [generalInfo, setGeneralInfo] = useState('')
   const [weeklyRequests, setWeeklyRequests] = useState('')
   const [saving, setSaving] = useState(false)
@@ -13,7 +15,7 @@ export default function HomePage() {
       const { data } = await supabase
         .from('custom_preferences')
         .select('general_info, content')
-        .eq('id', 1)
+        .eq('household_id', householdId)
         .single()
 
       if (data) {
@@ -23,16 +25,19 @@ export default function HomePage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [householdId])
 
   async function save() {
     setSaving(true)
-    await supabase.from('custom_preferences').upsert({
-      id: 1,
-      general_info: generalInfo,
-      content: weeklyRequests,
-      updated_at: new Date().toISOString(),
-    })
+    await supabase.from('custom_preferences').upsert(
+      {
+        household_id: householdId,
+        general_info: generalInfo,
+        content: weeklyRequests,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'household_id' }
+    )
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

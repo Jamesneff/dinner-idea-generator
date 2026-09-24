@@ -18,28 +18,27 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVIC
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-RECIPIENT_EMAILS = [
-    "jamesneff07@gmail.com",
-    "janiceneff@yahoo.com",
-]
 SENDER_EMAIL = os.environ.get("GMAIL_SENDER", "jamesneff07@gmail.com")
 
 MEAL_PREFERENCES = """
-- Family of 4, no food allergies
-- Avoid beef
-- Dislike Indian food
-- Enjoy fish and chicken primarily as meats
+- No food allergies unless noted below
 - Prefer weeknight meals that take under an hour
 - Enjoy Italian, Mediterranean, American, Mexican, and Asian cuisines
 - Mix of simple and slightly more adventurous meals
 """
 
 
-def fetch_recent_feedback():
+def fetch_households():
+    result = supabase.table("households").select("*").execute()
+    return result.data
+
+
+def fetch_recent_feedback(household_id):
     four_weeks_ago = (date.today() - timedelta(weeks=4)).isoformat()
     result = (
         supabase.table("meal_plans")
         .select("*, meals(*, feedback(*))")
+        .eq("household_id", household_id)
         .gte("week_start", four_weeks_ago)
         .execute()
     )
@@ -56,8 +55,13 @@ def fetch_recent_feedback():
     return feedback_summary
 
 
-def fetch_db_preferences():
-    result = supabase.table("custom_preferences").select("content, general_info").eq("id", 1).execute()
+def fetch_db_preferences(household_id):
+    result = (
+        supabase.table("custom_preferences")
+        .select("content, general_info")
+        .eq("household_id", household_id)
+        .execute()
+    )
     if not result.data:
         return "", ""
     row = result.data[0]
@@ -140,8 +144,8 @@ def lookup_spoonacular(search_query, display_name=None):
         return None
 
 
-def build_prompt(feedback):
-    general_info, weekly_requests = fetch_db_preferences()
+def build_prompt(feedback, household_id):
+    general_info, weekly_requests = fetch_db_preferences(household_id)
     general_section = f"\nFamily info:\n{general_info.strip()}" if general_info.strip() else ""
     weekly_section = f"\nSpecial requests for this week:\n{weekly_requests.strip()}" if weekly_requests.strip() else ""
 
@@ -190,9 +194,9 @@ Return ONLY a JSON array with exactly 7 objects, one per day:
 Make meals varied, practical, and appealing. No markdown, just the JSON array."""
 
 
-def generate_meals():
-    feedback = fetch_recent_feedback()
-    prompt = build_prompt(feedback)
+def generate_meals(household_id):
+    feedback = fetch_recent_feedback(household_id)
+    prompt = build_prompt(feedback, household_id)
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
@@ -201,11 +205,15 @@ def generate_meals():
     return json.loads(text)
 
 
-def save_meal_plan(meals):
+def save_meal_plan(meals, household_id):
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
 
-    plan = supabase.table("meal_plans").insert({"week_start": week_start.isoformat()}).execute()
+    plan = (
+        supabase.table("meal_plans")
+        .insert({"week_start": week_start.isoformat(), "household_id": household_id})
+        .execute()
+    )
     plan_id = plan.data[0]["id"]
 
     meal_rows = [
@@ -237,9 +245,25 @@ def save_meal_plan(meals):
     return plan_id
 
 
-def build_email_html(meals_with_data, plan_id):
+def build_grocery_list(meals_with_data):
+    """Aggregate ingredients across the week's meals, grouping by ingredient name."""
+    groups = {}
+    for meal in meals_with_data:
+        for ing in meal.get("ingredients") or []:
+            name = (ing.get("ingredient") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            group = groups.setdefault(key, {"ingredient": name, "measures": []})
+            measure = (ing.get("measure") or "").strip()
+            if measure:
+                group["measures"].append(measure)
+    return sorted(groups.values(), key=lambda g: g["ingredient"].lower())
+
+
+def build_email_html(meals_with_data, access_token):
     frontend_url = os.environ["FRONTEND_URL"]
-    feedback_url = f"{frontend_url}/this-week"
+    feedback_url = f"{frontend_url}/this-week?h={access_token}"
 
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
@@ -266,6 +290,26 @@ def build_email_html(meals_with_data, plan_id):
           </td>
         </tr>"""
 
+    grocery_items = build_grocery_list(meals_with_data)
+    grocery_rows = "".join(
+        f"""
+        <li style="padding:6px 0;border-bottom:1px solid #f5f0e8;color:#44403c;font-size:14px;">
+          {item['ingredient']}
+          {f'<span style="color:#a8a29e;"> — {", ".join(item["measures"])}</span>' if item['measures'] else ''}
+        </li>"""
+        for item in grocery_items
+    )
+    grocery_section = (
+        f"""
+      <div style="margin-top:28px;">
+        <h2 style="color:#92400e;font-size:16px;margin:0 0 8px;">Grocery list</h2>
+        <ul style="list-style:none;margin:0;padding:0;">{grocery_rows}
+        </ul>
+      </div>"""
+        if grocery_items
+        else ""
+    )
+
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -284,13 +328,14 @@ def build_email_html(meals_with_data, plan_id):
         </a>
         <p style="color:#a8a29e;font-size:13px;margin-top:12px;">Rate meals, mark what you made, or swap any you don&apos;t like.</p>
       </div>
+      {grocery_section}
     </div>
   </div>
 </body>
 </html>"""
 
 
-def send_email(meals, plan_id):
+def send_email(plan_id, household):
     result = supabase.table("meals").select("*").eq("meal_plan_id", plan_id).execute()
     meals_with_data = sorted(
         result.data,
@@ -300,31 +345,42 @@ def send_email(meals, plan_id):
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     subject = f"Your dinner ideas for the week of {week_start.strftime('%B %d')}"
+    recipient_emails = household["emails"]
 
-    html_body = build_email_html(meals_with_data, plan_id)
+    html_body = build_email_html(meals_with_data, household["access_token"])
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
-    msg["To"] = ", ".join(RECIPIENT_EMAILS)
+    msg["To"] = ", ".join(recipient_emails)
     msg.attach(MIMEText(html_body, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(SENDER_EMAIL, os.environ["GMAIL_APP_PASSWORD"].strip())
-        smtp.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
+        smtp.sendmail(SENDER_EMAIL, recipient_emails, msg.as_string())
 
 
 def main():
-    print("Generating meal plan...")
-    meals = generate_meals()
-    print(f"Generated {len(meals)} meals")
+    households = fetch_households()
+    if not households:
+        print("No households found — add a row to the households table first.")
+        return
 
-    print("Saving to database and fetching recipe data...")
-    plan_id = save_meal_plan(meals)
-    print(f"Saved plan {plan_id}")
+    for household in households:
+        print(f"--- {household['name']} ---")
+        try:
+            print("Generating meal plan...")
+            meals = generate_meals(household["id"])
+            print(f"Generated {len(meals)} meals")
 
-    print("Sending email...")
-    send_email(meals, plan_id)
-    print("Done!")
+            print("Saving to database and fetching recipe data...")
+            plan_id = save_meal_plan(meals, household["id"])
+            print(f"Saved plan {plan_id}")
+
+            print("Sending email...")
+            send_email(plan_id, household)
+            print("Done!")
+        except Exception as e:
+            print(f"  Failed for household '{household['name']}': {e}")
 
 
 if __name__ == "__main__":

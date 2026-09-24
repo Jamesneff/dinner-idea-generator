@@ -9,6 +9,7 @@ export default function Layout({ children }) {
         </div>
         <NavLink to="/">Home</NavLink>
         <NavLink to="/this-week">This week</NavLink>
+        <NavLink to="/grocery-list">Grocery list</NavLink>
         <NavLink to="/favorites">Favorites</NavLink>
       </aside>
       <main className="flex-1 overflow-auto">
