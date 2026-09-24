@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useHousehold } from '../lib/household'
 
 export default function FavoritesPage() {
+  const { householdId } = useHousehold()
   const [favorites, setFavorites] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -9,15 +11,16 @@ export default function FavoritesPage() {
     async function load() {
       const { data } = await supabase
         .from('meals')
-        .select('*, meal_plans(week_start)')
+        .select('*, meal_plans!inner(week_start, household_id)')
         .eq('favorited', true)
+        .eq('meal_plans.household_id', householdId)
         .order('created_at', { ascending: false })
 
       setFavorites(data || [])
       setLoading(false)
     }
     load()
-  }, [])
+  }, [householdId])
 
   async function unfavorite(mealId) {
     await supabase.from('meals').update({ favorited: false }).eq('id', mealId)
