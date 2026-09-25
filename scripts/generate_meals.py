@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import re
 import urllib.request
@@ -198,7 +199,7 @@ def generate_meals(household_id):
     feedback = fetch_recent_feedback(household_id)
     prompt = build_prompt(feedback, household_id)
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": prompt}],
     )
     text = re.sub(r"```(?:json)?\n?", "", response.choices[0].message.content.strip()).strip()
@@ -363,8 +364,9 @@ def main():
     households = fetch_households()
     if not households:
         print("No households found — add a row to the households table first.")
-        return
+        sys.exit(1)
 
+    failures = []
     for household in households:
         print(f"--- {household['name']} ---")
         try:
@@ -381,6 +383,11 @@ def main():
             print("Done!")
         except Exception as e:
             print(f"  Failed for household '{household['name']}': {e}")
+            failures.append(household["name"])
+
+    if failures:
+        print(f"Failed for: {', '.join(failures)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
