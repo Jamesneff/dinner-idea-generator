@@ -2,8 +2,9 @@ name: Weekly Dinner Ideas
 
 on:
   schedule:
-    - cron: '0 18 * * 0'  # Every Sunday at 6pm UTC
-  workflow_dispatch:       # Allow manual trigger from GitHub UI
+    - cron: '0 18 * * 0'  # Neff Family — Sunday 6:00pm UTC
+    - cron: '5 18 * * 0'  # Hodge Family — Sunday 6:05pm UTC
+  workflow_dispatch:       # Allow manual trigger from GitHub UI (sends to every household)
 
 jobs:
   generate:
@@ -23,8 +24,17 @@ jobs:
           echo "Password length: ${#GMAIL_APP_PASSWORD}"
       - name: Ping healthchecks.io (start)
         run: curl -fsS -m 10 --retry 3 "${{ secrets.HEALTHCHECKS_URL }}/start" || true
+      - name: Determine household for this trigger
+        id: household
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 18 * * 0") echo "names=Neff Family" >> "$GITHUB_OUTPUT" ;;
+            "5 18 * * 0") echo "names=Hodge Family" >> "$GITHUB_OUTPUT" ;;
+            *) echo "names=" >> "$GITHUB_OUTPUT" ;;
+          esac
       - run: python scripts/generate_meals.py
         env:
+          HOUSEHOLD_NAMES: ${{ steps.household.outputs.names }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

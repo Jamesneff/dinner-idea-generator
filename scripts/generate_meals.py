@@ -31,7 +31,16 @@ MEAL_PREFERENCES = """
 
 def fetch_households():
     result = supabase.table("households").select("*").execute()
-    return result.data
+    households = result.data
+
+    # Scheduled runs pass which household(s) this trigger is for (see
+    # weekly_meals.yml); manual/local runs leave this unset and hit everyone.
+    filter_names = os.environ.get("HOUSEHOLD_NAMES", "").strip()
+    if filter_names:
+        names = {n.strip() for n in filter_names.split(",") if n.strip()}
+        households = [h for h in households if h["name"] in names]
+
+    return households
 
 
 def fetch_recent_feedback(household_id):
